@@ -1,0 +1,30 @@
+lockfileVersion: 5.4
+
+specifiers:
+  tinybase: ^2.2.6
+  typescript: ^4.9.4
+
+devDependencies:
+  tinybase: 2.2.6
+  typescript: 4.9.4
+
+packages:
+
+  /tinybase/2.2.6:
+    resolution: {integrity: sha512-iexEaHJIB24Zj8ywPpMxDd0MYripjeh64R3ph1RSo8SQyTCveck7l2Mxdp6WCNHu0OUEdB+gFNS2NQKkSUDUkQ==}
+    hasBin: true
+    peerDependencies:
+      prettier: ^2.0.0
+      react: '>=17.0.0'
+    peerDependenciesMeta:
+      prettier:
+        optional: true
+      react:
+        optional: true
+    dev: true
+
+  /typescript/4.9.4:
+    resolution: {integrity: sha512-Uz+dTXYzxXXbsFpM86Wh3dKCxrQqUcVMxwU54orwlJjOpO3ao8L7j5lH+dWfTwgCwIuM9GQ2kvVotzYJMXTBZg==}
+    engines: {node: '>=4.2.0'}
+    hasBin: true
+    dev: true

@@ -1,0 +1,6 @@
+{
+	"devDependencies": {
+		"typescript": "^4.9.4",
+		"tinybase": "^2.2.6"
+	}
+}
