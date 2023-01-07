@@ -1,16 +1,24 @@
 lockfileVersion: 5.4
 
 specifiers:
+  prettier: ^2.8.2
   tinybase: ^2.2.6
   typescript: ^4.9.4
 
 devDependencies:
-  tinybase: 2.2.6
+  prettier: 2.8.2
+  tinybase: 2.2.6_prettier@2.8.2
   typescript: 4.9.4
 
 packages:
 
-  /tinybase/2.2.6:
+  /prettier/2.8.2:
+    resolution: {integrity: sha512-BtRV9BcncDyI2tsuS19zzhzoxD8Dh8LiCx7j7tHzrkz8GFXAexeWFdi22mjE1d16dftH2qNaytVxqiRTGlMfpw==}
+    engines: {node: '>=10.13.0'}
+    hasBin: true
+    dev: true
+
+  /tinybase/2.2.6_prettier@2.8.2:
     resolution: {integrity: sha512-iexEaHJIB24Zj8ywPpMxDd0MYripjeh64R3ph1RSo8SQyTCveck7l2Mxdp6WCNHu0OUEdB+gFNS2NQKkSUDUkQ==}
     hasBin: true
     peerDependencies:
@@ -21,6 +29,8 @@ packages:
         optional: true
       react:
         optional: true
+    dependencies:
+      prettier: 2.8.2
     dev: true
 
   /typescript/4.9.4:

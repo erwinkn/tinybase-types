@@ -1,6 +1,7 @@
 {
 	"devDependencies": {
-		"typescript": "^4.9.4",
-		"tinybase": "^2.2.6"
+		"prettier": "^2.8.2",
+		"tinybase": "^2.2.6",
+		"typescript": "^4.9.4"
 	}
 }
