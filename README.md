@@ -8,7 +8,7 @@ Also includes a tiny, fully typesafe query builder for TinyQL.
 - [ ] `metrics`
 - [ ] `indexes`  
 - [ ] `relationships`
-- [x] `queries`
+- [ ] `queries` (WIP)
   - [ ] Query builder extension (WIP)
 - [ ] `metrics`
 - [ ] `checkpoints`
