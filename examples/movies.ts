@@ -1,8 +1,8 @@
-import { createStore, ExternalSchema } from "tinybase/store";
-import { createQueryBuilder } from "../src/extensions/createQueryBuilder";
 
 // Classical database demo, based on The Movie Database (TMDB)
 // https://www.themoviedb.org
+
+import { AllCellIds, createStore, OutputOf } from "tinybase/store";
 
 // Let's try a type schema with optional fields
 
@@ -23,7 +23,7 @@ type Schema = {
 	};
 	genres: {
 		id: string;
-		name: string;
+		name?: string | null;
 	};
 	people: {
 		id: string;
@@ -44,24 +44,11 @@ type Schema = {
 	};
 };
 
-interface Foo {
-  x: number;
-  y: string;
-}
-
-type Base = {
-  [key: string]: string | number | boolean
-}
-
-type Test = Foo extends Base ? true : false;
-
 const store = createStore<Schema>();
 
-store.setRow("people", "rowId", {
-  id: "id",
-  name: "name",
-  gender: "M",
-  born: 1983,
-  died: false,
-  popularity: 23
+type Data = OutputOf<typeof store>;
+type Test = AllCellIds<Data>;
+
+store.addCellListener("movies", "xxx", "year", (store, tableId, rowId, cellId, newCell, oldCell, getCellChange) => {
+
 })

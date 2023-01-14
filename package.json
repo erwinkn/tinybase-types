@@ -1,4 +1,7 @@
 {
+	"scripts": {
+		"tsc": "tsc --noEmit"
+	},
 	"devDependencies": {
 		"prettier": "^2.8.2",
 		"tinybase": "^2.2.6",

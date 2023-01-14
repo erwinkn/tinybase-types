@@ -1,6 +1,6 @@
 import {
 	SupportedCellValues,
-	Schema as StoreSchema,
+	TinyBaseSchema as StoreSchema,
 	Store,
 	CellValue,
 } from "tinybase/store";

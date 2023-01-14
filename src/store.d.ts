@@ -1,4 +1,292 @@
+// TODO:
+// - in the case where TypeScript and TinyBase schemas are merged,
+//   allow setting a new TinyBase schema and have it merged with
+//   the original TypeScript schema. We could keep the original TypeScript
+//   schema under a unique symbol key, that we remove before returning
+//   the data.
+// - convert `null` inputs to `undefined` outputs for TypeScript schemas
 declare module "tinybase/store" {
+	// By default, the TypeScript schema is used for inputs and outputs
+	export function createStore<S extends Schema = {}>(): Store<S, S>;
+
+	// Input and Output schemas may differ, so we distinguish between them
+	// This is easier and more performant than keeping track of all the
+	// schema information & transforming it every time.
+	export interface Store<Input extends Schema, Output extends Schema> {
+		// === Schema definition ===
+		setSchema<S extends TinyBaseSchema>(
+			schema: S
+		): {} extends Output // check if there's an existing schema
+			? Store<TinyBaseInput<S>, TinyBaseOutput<S>>
+			: // Careful: first argument to `MergeInputs` must be the TinyBase schema,
+			  // and the second one has to be the TypeScript schema
+			  // Same applies for `MergeOutputs`
+			  Store<
+					MergeInputs<TinyBaseInput<S>, Input>,
+					MergeOutputs<TinyBaseOutput<S>, Output>
+			  >;
+
+		// === Getters ===
+		getTable<TableId extends keyof Output>(
+			tableId: TableId
+		): Record<string, Output[TableId]>;
+		getTables(): Data<Output>;
+		// This method is meant to be used as a type guard with arbitrary strings
+		hasTable(tableId: string): tableId is string & keyof Output;
+		hasTables(): {} extends Output ? false : true;
+		/* We can't give a more precise type, since TypeScript doesn't keep track of the order of object keys
+		 * Example:
+		 * ```
+		 * const schema1 = { a: {}, b: {}, };
+		 *
+		 * createStore()
+		 *   .setSchema(schema1)
+		 *   .getTableIds(); // -> ["a", "b"]
+		 *
+		 * const schema2 = { b: {}, a: {}, };
+		 * createStore()
+		 *   .setSchema(schema2)
+		 *   .getTableIds(); // -> ["a", "b"]
+		 * ```
+		 * But TypeScript cannot differentiate between the type of `schema1` and `schema2`
+		 */
+		getTableIds(): Array<keyof Output>;
+		getRow<TableId extends keyof Output>(
+			tableId: TableId,
+			rowId: string
+		): Output[TableId] | undefined;
+		// We cannot provide any information about row IDs
+		getRowIds<TableId extends keyof Output>(tableId: TableId): Array<string>;
+		getSortedRowIds<TableId extends keyof Output>(
+			tableId: TableId
+		): Array<string>;
+		getCell<TableId extends keyof Output, CellId extends keyof Output[TableId]>(
+			tableId: TableId,
+			rowId: string,
+			cellId: CellId
+		): Output[TableId][CellId] | undefined;
+		// Meant to be used as a type guard for arbitrary strings
+		hasCell<TableId extends keyof Output>(
+			tableId: TableId,
+			rowId: string,
+			cellId: string
+		): cellId is string & keyof Output[TableId];
+		getCellIds<TableId extends keyof Output>(
+			tableId: TableId,
+			rowId: string
+		): Array<keyof Output[TableId]>;
+		// Not worth it to implement a JSON serializer in TypeScript
+		getJson(): string;
+		// Not worth it to implement a JSON serializer in TypeScript
+		getSchemaJson(): string;
+
+		// === Setters ===
+		// TODO: should we allow creation of new tables here?
+		// Example: I don't know what TinyBase does if you .setTable() for a table ID
+		// that is not in the schema
+		setTables(tables: Input): Store<Input, Output>;
+		setTable<TableId extends keyof Input>(
+			tableId: TableId,
+			table: Input[TableId]
+		): Store<Input, Output>;
+		setRow<TableId extends keyof Input>(
+			tableId: TableId,
+			rowId: string,
+			row: Input[TableId]
+		): Store<Input, Output>;
+		// TODO: if we assume that TypeScript users conform to the types, this method should never return `undefined`
+		// Should we remove it from the signature?
+		addRow<TableId extends keyof Input>(
+			tableId: TableId,
+			row: Input[TableId]
+		): string | undefined;
+
+		setPartialRow<TableId extends keyof Input>(
+			tableId: TableId,
+			rowId: string,
+			partialRow: Partial<Input[TableId]>
+		): Store<Input, Output>;
+
+		setCell<TableId extends keyof Input, CellId extends keyof Input[TableId]>(
+			tableId: TableId,
+			rowId: string,
+			cellId: CellId,
+			cell: CellUpdate<Input[TableId][CellId]>
+		): Store<Input, Output>;
+
+		// This is the Wild West, all bets are off
+		setJson(json: string): Store<Input, Output>;
+
+		// == Listeners ==
+		addTablesListener(
+			listener: TablesListener<Input, Output>,
+			mutator?: boolean
+		): string;
+
+		// Not entirely clear on what this does, may need to change the type
+		addTableIdsListener(
+			listener: TablesIdListener<Input, Output>,
+			mutator?: boolean
+		): string;
+
+		// 2 overloads for `addTableListener`
+		addTableListener(
+			tableId: null,
+			listener: GlobalTableListener<Input, Output>,
+			mutator?: boolean
+		): string;
+		addTableListener<TableId extends keyof Output>(
+			tableId: TableId,
+			listener: TableListener<Input, Output, TableId>,
+			mutator?: boolean
+		): string;
+
+		// 2 overloads for `addRowIdsListener`
+		addRowIdsListener(
+			tableId: null,
+			listener: GlobalRowIdsListener<Input, Output>,
+			mutator?: boolean
+		): string;
+		addRowIdsListener<TableId extends keyof Output>(
+			tableId: TableId,
+			listener: RowIdsListener<Input, Output, TableId>,
+			mutator?: boolean
+		): string;
+
+		addSortedRowIdsListener<
+			TableId extends keyof Output,
+			CellIdOrUndefined extends keyof Output[TableId] | undefined
+		>(
+			tableId: TableId,
+			cellId: CellIdOrUndefined,
+			descending: boolean,
+			offset: number,
+			limit: number | undefined,
+			listener: SortedRowIdsListener<Input, Output, TableId, CellIdOrUndefined>,
+			mutator?: boolean
+		): string;
+
+		addRowListener<
+			TableId extends keyof Output | null,
+			RowId extends string | null
+		>(
+			tableId: TableId,
+			rowId: RowId,
+			listener: RowListener<Input, Output, TableId, RowId>,
+			mutator?: boolean
+		): string;
+
+		addCellIdsListener<
+			TableId extends keyof Output | null,
+			RowId extends string | null
+		>(
+			tableId: TableId,
+			rowId: RowId,
+			listener: CellIdsListener<Input, Output, TableId, RowId>,
+			mutator?: boolean
+		): string;
+
+		// 3 overloads for addCellListener
+		// Necessary to provide precise typings on the cell values received by the listener
+		addCellListener<
+			TableId extends keyof Output,
+			RowId extends string | null,
+			CellId extends keyof Output[TableId]
+		>(
+			tableId: TableId,
+			rowId: RowId,
+			cellId: CellId,
+			listener: ExactCellListener<Input, Output, TableId, RowId, CellId>,
+			mutator?: boolean
+		): string;
+
+		addCellListener<
+			RowId extends string | null,
+			CellId extends AllCellIds<Output>
+		>(
+			tableId: null,
+			rowId: RowId,
+			cellId: CellId,
+			listener: CrossTablesCellListener<Input, Output, RowId, CellId>,
+			mutator?: boolean
+		): string;
+
+		addCellListener<RowId extends string | null>(
+			tableId: null,
+			rowId: RowId,
+			cellId: null,
+			listener: CellListener<Input, Output, RowId>,
+			mutator?: boolean
+		): string;
+
+		addInvalidCellListener<
+			TableId extends keyof Output | null,
+			RowId extends string | null,
+			CellId extends AllowedCellIds<Output, TableId> | null
+		>(
+			tableId: TableId,
+			rowId: RowId,
+			cellId: CellId,
+			listener: InvalidCellListener<Input, Output, TableId, RowId, CellId>,
+			mutator?: boolean
+		): string;
+
+		addDidFinishTransactionListener(
+			listener: TransactionListener<Input, Output>
+		): string;
+		addWillFinishTransactionListener(
+			listener: TransactionListener<Input, Output>
+		): string;
+
+		callListener(listenerId: string): Store<Input, Output>;
+		delListener(listenerId: string): Store<Input, Output>;
+
+		// === [Iterator methods] ===
+		forEachTable(tableCallback: TableCallback<Output>): void;
+		forEachRow<TableId extends keyof Output>(
+			tableId: TableId,
+			rowCallback: RowCallback<Output, TableId>
+		): void;
+		forEachCell<TableId extends keyof Output>(
+			tableId: TableId,
+			rowId: string,
+			cellCallback: CellCallback<Output, TableId>
+		): void;
+
+		// === [Transaction methods] ===
+		transaction<T>(actions: () => T, doRollback?: DoRollback<Output>): T;
+		startTransaction(): Store<Input, Output>;
+		finishTransaction(doRollback?: DoRollback<Output>): Store<Input, Output>;
+
+		// === [Delete methode] ===
+		// TODO: should this remove the table from the type
+		delTables(): Store<Input, Output>;
+		// TODO: should this remove the table from the type?
+		delTable<TableId extends keyof Output>(
+			tableId: TableId
+		): Store<Input, Output>;
+		delRow<TableId extends keyof Output>(
+			tableId: TableId,
+			rowId: string
+		): Store<Input, Output>;
+
+		// TODO: shoud we make the Store generic by its schema, to refine the type for this?
+		// I don't think it's worth it
+		delCell<TableId extends keyof Output, CellId extends keyof Output[TableId]>(
+			tableId: TableId,
+			rowId: string,
+			cellId: CellId,
+			forceDel?: boolean
+		): Store<Input, Output>;
+
+		delSchema(): Store<{}, {}>;
+
+		getListenerStats(): StoreListenerStats;
+	}
+
+	// export type SchemasMatch<S extends TinyBaseSchema, Ext extends ExternalSchema> =
+
+	// === Schema type inference ===
 	export interface BooleanSchema {
 		type: "boolean";
 		default?: boolean;
@@ -12,57 +300,111 @@ declare module "tinybase/store" {
 		default?: string;
 	}
 
-	export type CellSchema = BooleanSchema | NumberSchema | StringSchema;
-	export type TableSchema = Record<string, CellSchema>;
-	export type Schema = Record<string, TableSchema>;
+	export type TinyBaseCellSchema = BooleanSchema | NumberSchema | StringSchema;
+	export type TinyBaseTableSchema = Record<string, TinyBaseCellSchema>;
+	export type TinyBaseSchema = Record<string, TinyBaseTableSchema>;
 
-	type CellValue<S extends CellSchema> = S extends BooleanSchema
+	type CellValue<CellType extends string> = CellType extends "boolean"
 		? boolean
-		: S extends NumberSchema
+		: CellType extends "number"
 		? number
-		: S extends StringSchema
+		: CellType extends "string"
 		? string
 		: never;
 
-	export type SupportedCellValues = CellValue<CellSchema>;
+	// The conditional checks if a default is provided or not
+	// All fields are nullable in a TinyBase schema, thus the output
+	// can always be `undefined`, unless a default is provided.
+	export type OutputValue<S extends TinyBaseCellSchema> =
+		S["default"] extends CellValue<S["type"]>
+			? CellValue<S["type"]>
+			: CellValue<S["type"]> | undefined;
 
-	type KeysWithoutDefault<Table extends TableSchema> = {
-		[Key in keyof Table]: Table[Key]["default"] extends CellValue<Table[Key]>
-			? never
-			: Key;
-	}[keyof Table];
+	export type SupportedCellTypes = CellValue<TinyBaseCellSchema["type"]>;
+	export type SupportedCellValues = SupportedCellTypes | null | undefined;
 
-	export type RowInput<S extends TableSchema> = {
-		[K in KeysWithoutDefault<S>]: CellValue<S[K]>;
+	export type TinyBaseOutput<S extends TinyBaseSchema> = {
+		[TableId in keyof S]: {
+			[CellId in keyof S[TableId]]: OutputValue<S[TableId][CellId]>;
+		};
 	};
-	export type Row<S extends TableSchema> = {
-		[K in keyof S]: CellValue<S[K]>;
-	};
-
-	export type Table<S extends TableSchema> = Record<string, Row<S>>;
-	export type TableInput<S extends TableSchema> = Record<string, RowInput<S>>;
-
-	export type Tables<S extends Schema> = {
-		[K in keyof S]: Table<S[K]>;
-	};
-	export type TablesInput<S extends Schema> = {
-		[K in keyof S]: TableInput<S[K]>;
+	export type TinyBaseInput<S extends TinyBaseSchema> = {
+		[TableId in keyof S]: {
+			[CellId in keyof S[TableId]]?: OutputValue<S[TableId][CellId]> | null;
+		};
 	};
 
-	export type SchemaOf<S extends Store<any>> = S extends Store<infer Schema>
-		? Schema
+	export type CellSchema = SupportedCellValues;
+	export type TableSchema = Record<string, SupportedCellValues>;
+	export type Schema = Record<string, Record<string, SupportedCellValues>>;
+
+	export type Data<S extends Schema> = {
+		[TableId in keyof S]: Record<
+			string,
+			{
+				[CellId in keyof S[TableId]]: S[TableId][CellId];
+			}
+		>;
+	};
+
+	export type Row<S extends TableSchema> = Record<string, S>;
+
+	// To merge schemas, we iterate over the keys in the TinyBase schema,
+	// since anything not specified in it will cause a runtime error
+	// For any cell that has a default,
+	export type MergeOutputs<
+		TinyBase extends Schema,
+		TypeScript extends Schema
+	> = {
+		[TableId in keyof TinyBase]: {
+			// First, we need to verify that TableId and CellId match the TypeScript schema
+			[CellId in keyof TinyBase[TableId]]: TableId extends keyof TypeScript
+				? CellId extends keyof TypeScript[TableId]
+					? TinyBase[TableId][CellId] & TypeScript[TableId][CellId]
+					: never
+				: never;
+		};
+	};
+
+	// For the input, we also only consider keys in the TinyBase schema
+	// However, we take the input types directly from the TypeScript schema
+	export type MergeInputs<
+		TinyBase extends Schema,
+		TypeScript extends Schema
+	> = {
+		[TableId in keyof TinyBase]: {
+			[CellId in keyof TinyBase[TableId]]: TableId extends keyof TypeScript
+				? CellId extends keyof TypeScript[TableId]
+					? // Here we merge the types, but let the TypeScript schema dictate
+					  // whether inputs can be nullable or nut
+					  Exclude<TinyBase[TableId][CellId], null | undefined> &
+							TypeScript[TableId][CellId]
+					: never
+				: never;
+		};
+	};
+
+	export type InputOf<S extends Store<any, any>> = S extends Store<
+		infer Input,
+		any
+	>
+		? Input
 		: never;
 
-	export type Data<S extends Store<any>> = Tables<SchemaOf<S>>;
+	export type OutputOf<S extends Store<any, any>> = S extends Store<
+		any,
+		infer Output
+	>
+		? Output
+		: never;
 
-	// Evaluates to `true` only if T is an object type with at least one key
-	type HasKeys<T> = T extends object
-		? keyof T extends never
-			? false
-			: true
-		: false;
+	// === ===
 
-	type HasTables<S extends Schema> = HasKeys<S>;
+	// type KeysWithoutDefault<Table extends TinyBaseTableSchema> = {
+	// 	[Key in keyof Table]: Table[Key]["default"] extends CellValue<Table[Key]>
+	// 		? never
+	// 		: Key;
+	// }[keyof Table];
 
 	type KeysOfUnion<T> = T extends any ? keyof T : never;
 
@@ -95,8 +437,8 @@ declare module "tinybase/store" {
 		CellId extends keyof S[TableId]
 	> = [
 		changed: boolean,
-		oldCell: CellValue<S[TableId][CellId]> | undefined,
-		newCell: CellValue<S[TableId][CellId]>
+		oldCell: S[TableId][CellId] | undefined,
+		newCell: S[TableId][CellId]
 	];
 
 	type GetCellChange<S extends Schema> = <
@@ -108,43 +450,51 @@ declare module "tinybase/store" {
 		cellId: CellId
 	) => CellChange<S, TableId, CellId>;
 
-	type TablesListener<S extends Schema> = (
-		store: Store<S>,
-		getCellChange: GetCellChange<S>
+	type TablesListener<Input extends Schema, Output extends Schema> = (
+		store: Store<Input, Output>,
+		getCellChange: GetCellChange<Output>
 	) => void;
 
 	// Not entirely clear on what this does, it may need to receive a store with a different schema
-	type TablesIdListener<S extends Schema> = (store: Store<S>) => void;
-
-	type GlobalTableListener<S extends Schema> = (
-		store: Store<S>,
-		tableId: keyof S,
-		getCellChange: GetCellChange<S>
+	type TablesIdListener<Input extends Schema, Output extends Schema> = (
+		store: Store<Input, Output>
 	) => void;
 
-	type TableListener<S extends Schema, TableId extends keyof S> = (
-		store: Store<S>,
+	type GlobalTableListener<Input extends Schema, Output extends Schema> = (
+		store: Store<Input, Output>,
+		tableId: keyof Output,
+		getCellChange: GetCellChange<Output>
+	) => void;
+
+	type TableListener<
+		Input extends Schema,
+		Output extends Schema,
+		TableId extends keyof Output
+	> = (
+		store: Store<Input, Output>,
 		tableId: TableId,
-		getCellChange: GetCellChange<S>
+		getCellChange: GetCellChange<Output>
 	) => void;
 
-	type GlobalRowIdsListener<S extends Schema> = (
-		store: Store<S>,
-		tableId: keyof S
+	type GlobalRowIdsListener<Input extends Schema, Output extends Schema> = (
+		store: Store<Input, Output>,
+		tableId: keyof Output
 	) => void;
 
-	type RowIdsListener<S extends Schema, TableId extends keyof S> = (
-		store: Store<S>,
-		tableId: TableId
-	) => void;
+	type RowIdsListener<
+		Input extends Schema,
+		Output extends Schema,
+		TableId extends keyof Output
+	> = (store: Store<Input, Output>, tableId: TableId) => void;
 
 	// I don't think it's worth it to provide two types, each with `descending` either `true` or `false`
 	type SortedRowIdsListener<
-		S extends Schema,
-		TableId extends keyof S,
-		CellIdOrUndefined extends keyof S[TableId] | undefined
+		Input extends Schema,
+		Output extends Schema,
+		TableId extends keyof Output,
+		CellIdOrUndefined extends keyof Output[TableId] | undefined
 	> = (
-		store: Store<S>,
+		store: Store<Input, Output>,
 		tableId: TableId,
 		cellId: CellIdOrUndefined,
 		descending: boolean,
@@ -154,47 +504,51 @@ declare module "tinybase/store" {
 	) => void;
 
 	type RowListener<
-		S extends Schema,
-		TableId extends keyof S | null,
+		Input extends Schema,
+		Output extends Schema,
+		TableId extends keyof Output | null,
 		RowId extends string | null
 	> = (
-		store: Store<S>,
-		tableId: TableId extends null ? keyof S : TableId,
+		store: Store<Input, Output>,
+		tableId: TableId extends null ? keyof Output : TableId,
 		rowId: RowId extends null ? string : RowId,
-		getCellChange: GetCellChange<S> | undefined
+		getCellChange: GetCellChange<Output> | undefined
 	) => void;
 
 	type CellIdsListener<
-		S extends Schema,
-		TableId extends keyof S | null,
+		Input extends Schema,
+		Output extends Schema,
+		TableId extends keyof Output | null,
 		RowId extends string | null
 	> = (
-		store: Store<S>,
-		tableId: TableId extends null ? keyof S : TableId,
+		store: Store<Input, Output>,
+		tableId: TableId extends null ? keyof Output : TableId,
 		rowId: RowId extends null ? string : RowId
 	) => void;
 
 	type ExactCellListener<
-		S extends Schema,
-		TableId extends keyof S,
+		Input extends Schema,
+		Output extends Schema,
+		TableId extends keyof Output,
 		RowId extends string | null,
-		CellId extends keyof S[TableId]
+		CellId extends keyof Output[TableId]
 	> = (
-		store: Store<S>,
+		store: Store<Input, Output>,
 		tableId: TableId,
 		rowId: RowId extends null ? string : RowId,
 		cellId: CellId,
-		newCell: CellValue<S[TableId][CellId]>,
-		oldCell: CellValue<S[TableId][CellId]>,
-		getCellChange: GetCellChange<S> | undefined
+		newCell: Output[TableId][CellId],
+		oldCell: Output[TableId][CellId],
+		getCellChange: GetCellChange<Output> | undefined
 	) => void;
 
 	type CrossTablesCellListener<
-		S extends Schema,
+		Input extends Schema,
+		Output extends Schema,
 		RowId extends string | null,
-		CellId extends AllCellIds<S>
-	> = <TableId extends TablesWithCellId<S, CellId>>(
-		store: Store<S>,
+		CellId extends AllCellIds<Output>
+	> = <TableId extends TablesWithCellId<Output, CellId>>(
+		store: Store<Input, Output>,
 		tableId: TableId,
 		rowId: RowId extends null ? string : RowId,
 		cellId: CellId,
@@ -226,43 +580,45 @@ declare module "tinybase/store" {
 		 * )
 		 * ```
 		 */
-		newCell: CellValue<S[TableId][CellId]>,
-		oldCell: CellValue<S[TableId][CellId]>,
-		getCellChange: GetCellChange<S> | undefined
+		newCell: Output[TableId][CellId],
+		oldCell: Output[TableId][CellId],
+		getCellChange: GetCellChange<Output> | undefined
 	) => void;
 
-	type CellListener<S extends Schema, RowId extends string | null> = <
-		TableId extends keyof S,
-		CellId extends keyof S[TableId]
-	>(
-		store: Store<S>,
+	type CellListener<
+		Input extends Schema,
+		Output extends Schema,
+		RowId extends string | null
+	> = <TableId extends keyof Output, CellId extends keyof Output[TableId]>(
+		store: Store<Input, Output>,
 		tableId: TableId,
 		rowId: RowId extends null ? string : RowId,
 		cellId: CellId,
-		newCell: CellValue<S[TableId][CellId]>,
-		oldCell: CellValue<S[TableId][CellId]>,
-		getCellChange: GetCellChange<S> | undefined
+		newCell: Output[TableId][CellId],
+		oldCell: Output[TableId][CellId],
+		getCellChange: GetCellChange<Output> | undefined
 	) => void;
 
 	type InvalidCellListener<
-		S extends Schema,
-		TableId extends keyof S | null,
+		Input extends Schema,
+		Output extends Schema,
+		TableId extends keyof Output | null,
 		RowId extends string | null,
-		CellId extends AllowedCellIds<S, TableId> | null
+		CellId extends AllowedCellIds<Output, TableId> | null
 	> = (
-		store: Store<S>,
-		tableId: TableId extends null ? keyof S : TableId,
+		store: Store<Input, Output>,
+		tableId: TableId extends null ? keyof Output : TableId,
 		rowId: RowId extends null ? string : RowId,
 		cellId: CellId extends null
-			? TableId extends keyof S
-				? keyof S[TableId]
-				: AllCellIds<S>
+			? TableId extends keyof Output
+				? keyof Output[TableId]
+				: AllCellIds<Output>
 			: CellId,
 		invalidCells: any[]
 	) => void;
 
-	type TransactionListener<S extends Schema> = (
-		store: Store<S>,
+	type TransactionListener<Input extends Schema, Output extends Schema> = (
+		store: Store<Input, Output>,
 		cellsTouched: boolean
 	) => void;
 
@@ -270,7 +626,7 @@ declare module "tinybase/store" {
 		CellId extends keyof S[TableId]
 	>(
 		cellId: CellId,
-		cell: CellValue<S[TableId][CellId]>
+		cell: S[TableId][CellId]
 	) => void;
 
 	type RowCallback<S extends Schema, TableId extends keyof S> = (
@@ -292,9 +648,7 @@ declare module "tinybase/store" {
 		[TableId in keyof S]: Record<
 			string,
 			Partial<{
-				[CellId in keyof S[TableId]]: CellChangeArray<
-					CellValue<S[TableId][CellId]>
-				>;
+				[CellId in keyof S[TableId]]: CellChangeArray<S[TableId][CellId]>;
 			}>
 		>;
 	}>;
@@ -325,270 +679,6 @@ declare module "tinybase/store" {
 		invalidCell?: number;
 		transaction?: number;
 	}
-
-	// === Callbacks ===
-
-	export interface Store<S extends Schema> {
-		// === Schema definition ===
-		setSchema<NewSchema extends Schema>(schema: NewSchema): Store<NewSchema>;
-
-		// === Getters ===
-		getTable<TableId extends keyof S>(tableId: TableId): Tables<S>[TableId];
-		getTables(): Tables<S>;
-		// This method is meant to be used as a type guard with arbitrary strings
-		hasTable(tableId: string): tableId is string & keyof S;
-		hasTables(): HasKeys<S>;
-		/* We can't give a more precise type, since TypeScript doesn't keep track of the order of object keys
-		 * Example:
-		 * ```
-		 * const schema1 = { a: {}, b: {}, };
-		 *
-		 * createStore()
-		 *   .setSchema(schema1)
-		 *   .getTableIds(); // -> ["a", "b"]
-		 *
-		 * const schema2 = { b: {}, a: {}, };
-		 * createStore()
-		 *   .setSchema(schema2)
-		 *   .getTableIds(); // -> ["a", "b"]
-		 * ```
-		 * But TypeScript cannot differentiate between the type of `schema1` and `schema2`
-		 */
-		getTableIds(): Array<keyof S>;
-		getRow<TableId extends keyof S>(
-			tableId: TableId,
-			rowId: string
-		): Row<S[TableId]> | undefined;
-		// We cannot provide any information about row IDs
-		getRowIds<TableId extends keyof S>(tableId: TableId): Array<string>;
-		getSortedRowIds<TableId extends keyof S>(tableId: TableId): Array<string>;
-		getCell<TableId extends keyof S, CellId extends keyof S[TableId]>(
-			tableId: TableId,
-			rowId: string,
-			cellId: CellId
-		): CellValue<S[TableId][CellId]> | undefined;
-		// Meant to be used as a type guard for arbitrary strings
-		hasCell<TableId extends keyof S>(
-			tableId: TableId,
-			rowId: string,
-			cellId: string
-		): cellId is string & keyof S[TableId];
-		getCellIds<TableId extends keyof S>(
-			tableId: TableId,
-			rowId: string
-		): Array<keyof S[TableId]>;
-		// Not worth it to implement a JSON serializer in TypeScript
-		getJson(): string;
-		// Not worth it to implement a JSON serializer in TypeScript
-		getSchemaJson(): string;
-
-		// === Setters ===
-		// TODO: should we allow creation of new tables here?
-		// Example: I don't know what TinyBase does if you .setTable() for a table ID
-		// that is not in the schema
-		setTables(tables: TablesInput<S>): Store<S>;
-		setTables<TableId extends keyof S>(
-			tableId: TableId,
-			table: TableInput<S[TableId]>
-		): Store<S>;
-		setRow<TableId extends keyof S>(
-			tableId: TableId,
-			rowId: string,
-			row: RowInput<S[TableId]>
-		): Store<S>;
-		// TODO: if we assume that TypeScript users conform to the types, this method should never return `undefined`
-		// Should we remove it from the signature?
-		addRow<TableId extends keyof S>(
-			tableId: TableId,
-			row: RowInput<S[TableId]>
-		): string | undefined;
-
-		setPartialRow<TableId extends keyof S>(
-			tableId: TableId,
-			rowId: string,
-			partialRow: Partial<Row<S[TableId]>>
-		): Store<S>;
-
-		setCell<TableId extends keyof S, CellId extends keyof S[TableId]>(
-			tableId: TableId,
-			rowId: string,
-			cellId: CellId,
-			cell: CellUpdate<CellValue<S[TableId][CellId]>>
-		): Store<S>;
-		// This is the Wild West, all bets are off
-		setJson(json: string): Store<S>;
-
-		// == Listeners ==
-		addTablesListener(listener: TablesListener<S>, mutator?: boolean): string;
-
-		// Not entirely clear on what this does, may need to change the type
-		addTableIdsListener(
-			listener: TablesIdListener<S>,
-			mutator?: boolean
-		): string;
-
-		// 2 overloads for `addTableListener`
-		addTableListener(
-			tableId: null,
-			listener: GlobalTableListener<S>,
-			mutator?: boolean
-		): string;
-		addTableListener<TableId extends keyof S>(
-			tableId: TableId,
-			listener: TableListener<S, TableId>,
-			mutator?: boolean
-		): string;
-
-		// 2 overloads for `addRowIdsListener`
-		addRowIdsListener(
-			tableId: null,
-			listener: GlobalRowIdsListener<S>,
-			mutator?: boolean
-		): string;
-		addRowIdsListener<TableId extends keyof S>(
-			tableId: TableId,
-			listener: RowIdsListener<S, TableId>,
-			mutator?: boolean
-		): string;
-
-		addSortedRowIdsListener<
-			TableId extends keyof S,
-			CellIdOrUndefined extends keyof S[TableId] | undefined
-		>(
-			tableId: TableId,
-			cellId: CellIdOrUndefined,
-			descending: boolean,
-			offset: number,
-			limit: number | undefined,
-			listener: SortedRowIdsListener<S, TableId, CellIdOrUndefined>,
-			mutator?: boolean
-		): string;
-
-		addRowListener<TableId extends keyof S | null, RowId extends string | null>(
-			tableId: TableId,
-			rowId: RowId,
-			listener: RowListener<S, TableId, RowId>,
-			mutator?: boolean
-		): string;
-
-		addCellIdsListener<
-			TableId extends keyof S | null,
-			RowId extends string | null
-		>(
-			tableId: TableId,
-			rowId: RowId,
-			listener: CellIdsListener<S, TableId, RowId>,
-			mutator?: boolean
-		): string;
-
-		// 3 overloads for addCellListener
-		// Necessary to provide precise typings on the cell values received by the listener
-		addCellListener<
-			TableId extends keyof S,
-			RowId extends string | null,
-			CellId extends keyof S[TableId]
-		>(
-			tableId: TableId,
-			rowId: RowId,
-			cellId: CellId,
-			listener: ExactCellListener<S, TableId, RowId, CellId>,
-			mutator?: boolean
-		): string;
-
-		addCellListener<RowId extends string | null, CellId extends AllCellIds<S>>(
-			tableId: null,
-			rowId: RowId,
-			cellId: CellId,
-			listener: CrossTablesCellListener<S, RowId, CellId>,
-			mutator?: boolean
-		): string;
-
-		addCellListener<RowId extends string | null>(
-			tableId: null,
-			rowId: RowId,
-			cellId: null,
-			listener: CellListener<S, RowId>,
-			mutator?: boolean
-		): string;
-
-		addInvalidCellListener<
-			TableId extends keyof S | null,
-			RowId extends string | null,
-			CellId extends AllowedCellIds<S, TableId> | null
-		>(
-			tableId: TableId,
-			rowId: RowId,
-			cellId: CellId,
-			listener: InvalidCellListener<S, TableId, RowId, CellId>,
-			mutator?: boolean
-		): string;
-
-		addDidFinishTransactionListener(listener: TransactionListener<S>): string;
-		addWillFinishTransactionListener(listener: TransactionListener<S>): string;
-
-		callListener(listenerId: string): Store<S>;
-		delListener(listenerId: string): Store<S>;
-
-		// === [Iterator methods] ===
-		forEachTable(tableCallback: TableCallback<S>): void;
-		forEachRow<TableId extends keyof S>(
-			tableId: TableId,
-			rowCallback: RowCallback<S, TableId>
-		): void;
-		forEachCell<TableId extends keyof S>(
-			tableId: TableId,
-			rowId: string,
-			cellCallback: CellCallback<S, TableId>
-		): void;
-
-		// === [Transaction methods] ===
-		transaction<T>(actions: () => T, doRollback?: DoRollback<S>): T;
-		startTransaction(): Store<S>;
-		finishTransaction(doRollback?: DoRollback<S>): Store<S>;
-
-		// === [Delete methode] ===
-		// TODO: should this remove the table from the type
-		delTables(): Store<S>;
-		// TODO: should this remove the table from the type?
-		delTable<TableId extends keyof S>(tableId: TableId): Store<S>;
-		delRow<TableId extends keyof S>(tableId: TableId, rowId: string): Store<S>;
-
-		// TODO: shoud we make the Store generic by its schema, to refine the type for this?
-		// I don't think it's worth it
-		delCell<TableId extends keyof S, CellId extends keyof S[TableId]>(
-			tableId: TableId,
-			rowId: string,
-			cellId: CellId,
-			forceDel?: boolean
-		): Store<S>;
-
-		delSchema(): Store<{}>;
-
-		getListenerStats(): StoreListenerStats;
-	}
-
-	export type ExternalSchema = Record<
-		string,
-		Record<string, SupportedCellValues>
-	>;
-
-	type CellSchemaFrom<T extends SupportedCellValues> = T extends boolean
-		? { type: "boolean" }
-		: T extends number
-		? { type: "number" }
-		: T extends string
-		? { type: "string" }
-		: never;
-
-	export type SchemaFromExternal<Ext extends ExternalSchema> = {
-		[TableId in keyof Ext]: {
-			[CellId in keyof Ext[TableId]]: CellSchemaFrom<Ext[TableId][CellId]>;
-		};
-	};
-
-	export function createStore<
-		Ext extends ExternalSchema = {}
-	>(): Store<SchemaFromExternal<Ext>>;
 
 	// TODO:
 	// - add opaque types for different types of IDs, to avoid confusing them with other strings?
