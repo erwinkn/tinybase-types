@@ -5,10 +5,11 @@ import {
 	Store,
 	SupportedCellValues,
 	TablesWithCellId,
+	Schema,
 } from "tinybase/store";
 
 declare module "tinybase/queries" {
-	export function createQueries<S extends TinyBaseSchema>(store: Store<S>): Queries<S>;
+	export function createQueries<Input extends Schema, Output extends Schema>(store: Store<Input, Output>): Queries<Input, Output>;
 
 	// The types for the query builder aren't 100% strict, because it's
 	// impossible to guarantee full typesafety with the current design
@@ -21,7 +22,7 @@ declare module "tinybase/queries" {
 		as(selectedCellId: string): void;
 	}
 
-	export type Select<S extends TinyBaseSchema> =
+	export type Select<S extends Schema> =
 		| ((cellId: AllCellIds<S>) => void)
 		| (<TableId extends keyof S>(
 				tableId: TableId,
@@ -34,7 +35,7 @@ declare module "tinybase/queries" {
 				) => SupportedCellValues | undefined
 		  ) => As);
 
-	export type Join<S extends TinyBaseSchema, MainTableId extends keyof S> =
+	export type Join<S extends Schema, MainTableId extends keyof S> =
 		| ((joinedTableId: keyof S, on: keyof S[MainTableId]) => As)
 		| ((
 				joinedTableId: keyof S,
@@ -54,10 +55,10 @@ declare module "tinybase/queries" {
 				) => undefined | string
 		  ) => As);
 
-	export type Where<S extends TinyBaseSchema, MainTableId extends keyof S> =
+	export type Where<S extends Schema, MainTableId extends keyof S> =
 		| (<CellId extends keyof S[MainTableId]>(
 				cellId: CellId,
-				equals: CellValue<S[MainTableId][CellId]>
+				equals: S[MainTableId][CellId]
 		  ) => void)
 		| (<
 				JoinedTableId extends keyof S,
@@ -65,7 +66,7 @@ declare module "tinybase/queries" {
 		  >(
 				joinedTableId: JoinedTableId,
 				joinedCellId: JoinedCellId,
-				equals: CellValue<S[JoinedTableId][JoinedCellId]>
+				equals: S[JoinedTableId][JoinedCellId]
 		  ) => void)
 		| ((condition: (getTableCell: GetCell<S>) => boolean) => void);
 
@@ -103,20 +104,19 @@ declare module "tinybase/queries" {
 	export type Having =
 		| ((selectedOrGroupedCellId: string, equals: SupportedCellValues) => void)
 		| ((
-				condition: (getSelectedOrGroupedCell: GetCell<TinyBaseSchema>) => boolean
+				condition: (getSelectedOrGroupedCell: GetCell<Schema>) => boolean
 		  ) => void);
 
 	// I don't think it's worth it to try and infer the exact union of types for this cell ID across all tables
 	// There are only 3 possible types for cell values, so just return a union of all of them
-	export type GetCell<S extends TinyBaseSchema> = (
+	export type GetCell<S extends Schema> = (
 		cellId: AllCellIds<S>
 	) => SupportedCellValues | undefined;
 
-	export interface Queries<S extends TinyBaseSchema> {
+	export interface Queries<Input extends Schema, Output extends Schema> {
 		// === Getter methods ===
-		getStore(): Store<S>;
+		getStore(): Store<Input, Output>;
 
     // === Configuration methods ===
-    setQuer
 	}
 }
